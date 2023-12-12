@@ -161,6 +161,7 @@ extern "C" {
     struct llama_model_params {
         int32_t n_gpu_layers; // number of layers to store in VRAM
         int32_t main_gpu;     // the GPU that is used for scratch and small tensors
+        float vram_budget_gb; // VRAM budget in GB, -1 for all available VRAM (for a single GPU)
         const float * tensor_split; // how to split layers across multiple GPUs (size: LLAMA_MAX_DEVICES)
 
         // called with a progress value between 0 and 1, pass NULL to disable
@@ -172,6 +173,8 @@ extern "C" {
         bool vocab_only; // only load the vocabulary, no weights
         bool use_mmap;   // use mmap if possible
         bool use_mlock;  // force system to keep model in RAM
+        bool reset_gpu_index; // force reset of the GPU index
+        bool disable_gpu_index; // bypass the GPU index and FFN split
     };
 
     struct llama_context_params {
@@ -273,6 +276,11 @@ extern "C" {
                              const char * path_model,
             struct llama_model_params     params);
 
+    LLAMA_API struct llama_model * llama_load_model_from_file_with_context(
+                             const char * path_model,
+            struct llama_model_params     params,
+            struct llama_context_params * cparams);
+
     LLAMA_API void llama_free_model(struct llama_model * model);
 
     LLAMA_API struct llama_context * llama_new_context_with_model(
@@ -293,6 +301,7 @@ extern "C" {
     LLAMA_API int llama_n_ctx      (const struct llama_context * ctx);
 
     LLAMA_API enum llama_vocab_type llama_vocab_type(const struct llama_model * model);
+    LLAMA_API bool llama_use_sparse_inference(const struct llama_model * model);
 
     LLAMA_API int llama_n_vocab    (const struct llama_model * model);
     LLAMA_API int llama_n_ctx_train(const struct llama_model * model);
@@ -319,6 +328,10 @@ extern "C" {
             const char * fname_out,
             const llama_model_quantize_params * params);
 
+    // Reserve KV cache in VRAM. This is an optimization to allocate KV cache before 
+    // FFN layers being split and offloaded to GPU. 
+    LLAMA_API void llama_reserve_model_kv_cache(struct llama_model * model, const struct llama_context_params * cparams);
+
     // Apply a LoRA adapter to a loaded model
     // path_base_model is the path to a higher quality model to use as a base for
     // the layers modified by the adapter. Can be NULL to use the current loaded model.
@@ -339,6 +352,8 @@ extern "C" {
                            float   scale,
                       const char * path_base_model,
                              int   n_threads);
+
+    LLAMA_API size_t llama_model_offload_ffn_split(struct llama_model * model);
 
     //
     // KV cache

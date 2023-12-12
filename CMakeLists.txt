@@ -37,7 +37,7 @@ endif()
 #
 
 if (APPLE)
-    set(LLAMA_METAL_DEFAULT ON)
+    set(LLAMA_METAL_DEFAULT OFF) # metal has not been supported on Apple Silicon yet
 else()
     set(LLAMA_METAL_DEFAULT OFF)
 endif()
@@ -348,6 +348,8 @@ endif()
 
 if (LLAMA_HIPBLAS)
     list(APPEND CMAKE_PREFIX_PATH /opt/rocm)
+    # enable fast atomic operation
+    add_compile_options(-munsafe-fp-atomics)
 
     if (NOT ${CMAKE_C_COMPILER_ID} MATCHES "Clang")
         message(WARNING "Only LLVM is supported for HIP, hint: CC=/opt/rocm/llvm/bin/clang")
@@ -435,7 +437,7 @@ set(cuda_flags ${cxx_flags} -use_fast_math ${cuda_flags})
 
 list(JOIN host_cxx_flags " " cuda_host_flags)  # pass host compiler flags as a single argument
 if (NOT cuda_host_flags STREQUAL "")
-    set(cuda_flags ${cuda_flags} -Xcompiler ${cuda_host_flags})
+    set(cuda_flags -forward-unknown-to-host-compiler ${cuda_flags} -Xcompiler ${cuda_host_flags})
 endif()
 
 add_compile_options("$<$<COMPILE_LANGUAGE:CUDA>:${cuda_flags}>")
@@ -751,7 +753,7 @@ install(
         WORLD_EXECUTE
     DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(
-    FILES convert-lora-to-ggml.py
+    FILES convert-hf-to-powerinfer-gguf.py
     PERMISSIONS
         OWNER_READ
         OWNER_WRITE

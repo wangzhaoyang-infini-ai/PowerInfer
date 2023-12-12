@@ -64,6 +64,7 @@ struct gpt_params {
     int32_t n_beams                         = 0;     // if non-zero then use beam search of given width.
     float   rope_freq_base                  = 0.0f;  // RoPE base frequency
     float   rope_freq_scale                 = 0.0f;  // RoPE frequency scaling factor
+    float   vram_budget_gb                  = -1.0f; // VRAM budget in GB (-1 - use available VRAM)
     float   yarn_ext_factor                 = -1.0f; // YaRN extrapolation mix factor
     float   yarn_attn_factor                = 1.0f;  // YaRN magnitude scaling factor
     float   yarn_beta_fast                  = 32.0f; // YaRN low correction dim
@@ -89,6 +90,9 @@ struct gpt_params {
     // TODO: avoid tuple, use struct
     std::vector<std::tuple<std::string, float>> lora_adapter; // lora adapter path with user defined scale
     std::string lora_base  = "";                              // base model path for the lora adapter
+
+    bool reset_gpu_index   = false; // refresh the gpu index file
+    bool disale_gpu_index  = false; // disable loading gpu index and splitting ffn
 
     int  ppl_stride        = 0;     // stride for perplexity calculations. If left at 0, the pre-existing approach will be used.
     int  ppl_output_type   = 0;     // = 0 -> ppl output is as usual, = 1 -> ppl output is num_tokens, ppl, one per line

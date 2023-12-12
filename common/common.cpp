@@ -471,6 +471,10 @@ bool gpt_params_parse_ex(int argc, char ** argv, gpt_params & params) {
                 break;
             }
             params.lora_base = argv[i];
+        } else if (arg == "--reset-gpu-index") {
+            params.reset_gpu_index = true;
+        } else if (arg == "--disable-gpu-index") {
+            params.disale_gpu_index = true;
         } else if (arg == "--mmproj") {
             if (++i >= argc) {
                 invalid_param = true;
@@ -559,6 +563,16 @@ bool gpt_params_parse_ex(int argc, char ** argv, gpt_params & params) {
 #else
             fprintf(stderr, "warning: llama.cpp was compiled without cuBLAS. It is not possible to set a tensor split.\n");
 #endif // GGML_USE_CUBLAS
+        } else if (arg == "--vram-budget") {
+            if (++i >= argc) {
+                invalid_param = true;
+                break;
+            }
+#ifdef GGML_USE_CUBLAS
+            params.vram_budget_gb = std::stof(argv[i]);
+#else
+            fprintf(stderr, "warning: PowerInfer was compiled without cuBLAS. It is not possible to set a VRAM budget.\n");
+#endif
         } else if (arg == "--no-mul-mat-q" || arg == "-nommq") {
 #ifdef GGML_USE_CUBLAS
             params.mul_mat_q = false;
@@ -795,6 +809,7 @@ void gpt_print_usage(int /*argc*/, char ** argv, const gpt_params & params) {
     printf("  --memory-f32          use f32 instead of f16 for memory key+value (default: disabled)\n");
     printf("                        not recommended: doubles context memory required and no measurable increase in quality\n");
     printf("  --temp N              temperature (default: %.1f)\n", (double)sparams.temp);
+    printf("  --vram-budget N       VRAM budget in GiB (default: -1, -1 = available VRAM)\n");
     printf("  --logits-all          return logits for all tokens in the batch (default: disabled)\n");
     printf("  --hellaswag           compute HellaSwag score over random tasks from datafile supplied with -f\n");
     printf("  --hellaswag-tasks N   number of tasks to use when computing the HellaSwag score (default: %zu)\n", params.hellaswag_tasks);
@@ -889,9 +904,12 @@ struct llama_model_params llama_model_params_from_gpt_params(const gpt_params & 
         mparams.n_gpu_layers = params.n_gpu_layers;
     }
     mparams.main_gpu        = params.main_gpu;
+    mparams.vram_budget_gb  = params.vram_budget_gb;
     mparams.tensor_split    = params.tensor_split;
     mparams.use_mmap        = params.use_mmap;
     mparams.use_mlock       = params.use_mlock;
+    mparams.reset_gpu_index = params.reset_gpu_index;
+    mparams.disable_gpu_index = params.disale_gpu_index;
 
     return mparams;
 }
@@ -943,14 +961,13 @@ void llama_batch_add(
 
 std::tuple<struct llama_model *, struct llama_context *> llama_init_from_gpt_params(gpt_params & params) {
     auto mparams = llama_model_params_from_gpt_params(params);
+    auto cparams = llama_context_params_from_gpt_params(params);
 
-    llama_model * model  = llama_load_model_from_file(params.model.c_str(), mparams);
+    llama_model * model  = llama_load_model_from_file_with_context(params.model.c_str(), mparams, &cparams);
     if (model == NULL) {
         fprintf(stderr, "%s: error: failed to load model '%s'\n", __func__, params.model.c_str());
         return std::make_tuple(nullptr, nullptr);
     }
-
-    auto cparams = llama_context_params_from_gpt_params(params);
 
     llama_context * lctx = llama_new_context_with_model(model, cparams);
     if (lctx == NULL) {
@@ -980,6 +997,8 @@ std::tuple<struct llama_model *, struct llama_context *> llama_init_from_gpt_par
     if (params.ignore_eos) {
         params.sparams.logit_bias[llama_token_eos(model)] = -INFINITY;
     }
+
+
 
     {
         LOG("warming up the model with an empty run\n");
@@ -1320,6 +1339,8 @@ void dump_non_result_info_yaml(FILE * stream, const gpt_params & params, const l
         fprintf(stream, "  - %s: %f\n", std::get<0>(la).c_str(), std::get<1>(la));
     }
     fprintf(stream, "lora_base: %s\n", params.lora_base.c_str());
+    fprintf(stream, "reset_gpu_index: %s\n", params.reset_gpu_index ? "true" : "false");
+    fprintf(stream, "disable_gpu_index: %s\n", params.disale_gpu_index? "true": "false");
     fprintf(stream, "main_gpu: %d # default: 0\n", params.main_gpu);
     fprintf(stream, "memory_f32: %s # default: false\n", !params.memory_f16 ? "true" : "false");
     fprintf(stream, "mirostat: %d # default: 0 (disabled)\n", sparams.mirostat);
@@ -1375,4 +1396,5 @@ void dump_non_result_info_yaml(FILE * stream, const gpt_params & params, const l
     fprintf(stream, "min_p: %f # default: 0.0\n", sparams.min_p);
     fprintf(stream, "typical_p: %f # default: 1.0\n", sparams.typical_p);
     fprintf(stream, "verbose_prompt: %s # default: false\n", params.verbose_prompt ? "true" : "false");
+    fprintf(stream, "vram_budget: %f # default: -1.0 (all available VRAM)\n", params.vram_budget_gb);
 }
